@@ -11,7 +11,6 @@ const userSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
-  password: String,
   role: {
     type: String,
     enum: ['student', 'campus'],
@@ -23,6 +22,10 @@ const userSchema = new mongoose.Schema({
       return this.role === 'campus';
     }
   },
+  password: {
+    type: String,
+    required: true
+  },
   userDetails: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'UserDetail'
@@ -33,8 +36,7 @@ const userSchema = new mongoose.Schema({
   }
 });
 
-userSchema.plugin(passportLocalMongoose, { usernameField: 'email' });
-
 const User = mongoose.model('User', userSchema);
 
 module.exports = User;
+

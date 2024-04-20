@@ -13,10 +13,12 @@ const eventSchema = new mongoose.Schema({
     registrationDeadline: { type: Date },
     price: { type: Number },
     images: [{
-        url:String,
-        filename:String
+        url: String,
+        filename: String
     }],
-    status: { type: String, enum: ['upcoming','ongoing', 'past'], default: 'upcoming' }
+    pinCode: String,
+    campus:String,
+    status: { type: String, enum: ['upcoming', 'ongoing', 'past'], default: 'upcoming' }
 }, { timestamps: false });
 
 const Event = mongoose.model('Event', eventSchema);

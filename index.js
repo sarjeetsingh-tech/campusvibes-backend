@@ -1,19 +1,24 @@
 if (process.env.NODE_ENV !== "production") {
-    require('dotenv').config()
-
+    require('dotenv').config();
 }
+
 const express = require('express');
 const app = express();
+const bodyParser = require('body-parser');
+const mongoose = require('mongoose');
+const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
+const cors = require('cors');
 
-//models
+// Models
 const User = require('./models/User');
 
-//routes
-const userRoute = require('./routes/user')
-const additionalDetailsRoute = require('./routes/additionalDetails')
-const eventRoute = require('./routes/event')
+// Routes
+const userRoute = require('./routes/user');
+const additionalDetailsRoute = require('./routes/additionalDetails');
+const eventRoute = require('./routes/event');
 
-//cloudinary
+// Cloudinary
 const cloudinary = require('cloudinary');
 cloudinary.v2.config({
     cloud_name: 'dsgzsnnzy',
@@ -22,68 +27,33 @@ cloudinary.v2.config({
     secure: true,
 });
 
-
-const mongoose = require('mongoose');
+// Connect to MongoDB
 mongoose.connect('mongodb://127.0.0.1:27017/campusVibes')
-    .then(() => console.log('connected'))
-    .catch(err => console.log('connection error'))
+    .then(() => console.log('Connected to MongoDB'))
+    .catch(err => console.error('Connection error:', err));
 
-const path = require('path');
-const bodyParser = require('body-parser');
+// Middleware
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+app.use(express.static('public'));
+app.use(cookieParser())
+app.use(cors());
 
-app.use(bodyParser.urlencoded({ extended: true }))
-app.use(bodyParser.json())
-app.use(express.static('public'))
-
-
-
-const session = require('express-session');
-const passport = require('passport');
-// Configure session middleware
-app.use(session({
-    secret: 'keyboard cat',
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-        secure: false, // Change to true if using HTTPS
-        expires: new Date(Date.now() + 1000 * 60 * 60),
-        maxAge: 1000 * 60 * 60, // or expires: new Date(Date.now() + 1000 * 60 * 60)
-        httpOnly: true
-    }
-}));
-
-app.use(passport.initialize());
-app.use(passport.session());
-
-
-
-passport.serializeUser(function (user, done) {
-    const serializedUser = {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        userDetails: user.userDetails,
-        campusDetails: user.campusDetails
-
-    };
-    done(null, serializedUser);
-});
-
-passport.deserializeUser(function (obj, done) {
-    done(null, obj);
+// CORS headers
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    next();
 });
 
 
-
-const LocalStrategy = require('passport-local').Strategy;
-passport.use(new LocalStrategy({ usernameField: 'email' }, User.authenticate()));
-
-
+// Routes
 app.use('/', userRoute);
 app.use('/', additionalDetailsRoute);
-app.use('/', eventRoute)
+app.use('/', eventRoute);
 
-app.listen(process.env.PORT, () => {
-    console.log("listening at port 3000");
-})
+// Start server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}`);
+});

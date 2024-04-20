@@ -5,7 +5,6 @@ const CampusDetailsSchema = new mongoose.Schema({
     address: String,
     city: String,
     state: String,
-    zipCode: String,
     website: String,
     contact: {
         phone: String,
@@ -13,8 +12,7 @@ const CampusDetailsSchema = new mongoose.Schema({
     },
     description: String,
     facilities: [String],
-    programsOffered: [String],
-    admissionRequirements: String
+    programsOffered: [String]
 });
 
 const CampusDetail = mongoose.model('CampusDetail', CampusDetailsSchema);

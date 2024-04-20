@@ -4,6 +4,7 @@ const OTP = require('../models/OTP');
 const otpGenerator = require('otp-generator')
 const bcrypt = require('bcrypt');
 const passport = require('passport');
+const jwt = require('jsonwebtoken');
 
 const mailSender = require('../utils/mailsender');
 const { userDetails } = require('./additionalDetails');
@@ -60,131 +61,77 @@ exports.sendOtp = async (req, res) => {
     }
 }
 
+
+
+// Signup Route
 exports.signup = async (req, res) => {
-    const { name, email, password, role, mobileNumber, otp } = req.body;
-
-    if (!name || !email || !password || !role) {
-        res.status(400).json({
-            success: false,
-            message: "Fields are missing"
-        })
-    }
-
-    if (role === 'campus') {
-        if (email !== "crssiet@gmail.com") {
-            return res.status(400).json({
-                success: false,
-                message: "Not a valid campus email"
-            });
-        }
-        if (!mobileNumber) {
-            return res.status(400).json({
-                success: false,
-                message: "Mobile number is required for campus"
-            });
-        }
-    }
-
-    const existingUser = await User.findOne({ email });
-
-    if (existingUser) {
-        return res.status(401).json({
-            success: false,
-            message: "Email already exists"
-        })
-    }
-    const recentOtp = await OTP.findOne({ email }).sort({ createdAt: -1 }).limit(1);
-
-
-    if (recentOtp == null) {
-        return res.status(400).json({
-            success: false,
-            message: 'OTP not found'
-        })
-    }
-    else if (otp != recentOtp.otp) {
-        return res.status(400).json({
-            success: false,
-            message: "Invalid OTP"
-        })
-    }
-
-    const newUser = new User({
-        name, email, role, mobileNumber
-    });
+    const { name, email, password, role, mobileNumber } = req.body;
 
     try {
-        await newUser.setPassword(password);
+        // Check if user already exists
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            return res.status(400).json({ message: 'Email already exists' });
+        }
+
+        // Create new user
+        const newUser = new User({
+            name,
+            email,
+            password, // Note: we will hash the password later
+            role,
+            mobileNumber
+        });
+        console.log('---------------------')
+        console.log(newUser)
+
+        // Hash the password
+        const salt = await bcrypt.genSalt(10);
+        newUser.password = await bcrypt.hash(password, salt);
+
+        // Save the user
         await newUser.save();
-        res.status(201).json({
-            success: true,
-            message: "Account created successfully"
-        });
-    } catch (err) {
-        console.log(err);
-        res.status(500).json({
-            success: false,
-            message: "Error creating user account"
-        });
-    }
-}
 
-exports.signin = async (req, res, next) => {
-    try {
-        const { email, password } = req.body;
-        if (!email || !password) {
-            return res.status(400).json({
-                success: false,
-                message: 'Email or Password is Empty',
-            });
-        }
-        const currUser = await User.findOne({ email });
-        console.log(currUser);
+        // Create JWT token
+        const accessToken = jwt.sign({ email, role }, process.env.ACCESS_TOKEN_SECRET);
 
-        passport.authenticate('local', (err, user, info) => {
-            if (err) {
-                return res.status(500).json({
-                    success: false,
-                    message: 'Signin Failure, try again',
-                });
-            }
-            if (!user) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Email or Password is incorrect',
-                });
-            }
-
-            req.login(user, (err) => {
-                if (err) {
-                    return res.status(500).json({
-                        success: false,
-                        message: 'Signin Failure, try again',
-                    });
-                }
-                let redirectUrl;
-                if (user.role == 'student') {
-                    redirectUrl = user.userDetails ? '/events' : '/user/details';
-                } else if (user.role = 'campus') {
-                    redirectUrl = user.campusDetails ? '/events' : '/campus/details';
-                }
-                console.log(user);
-                return res.status(200).json({
-                    success: true,
-                    message: 'Login successful',
-                    user: user,
-                    redirectUrl: redirectUrl
-                });
-            });
-        })(req, res, next);
-    } catch (err) {
-        console.log(err);
-        return res.status(500).json({
-            success: false,
-            message: 'Signin Failure, try again',
-        });
+        res.status(201).json({ accessToken, message: 'Account created successfully' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Error creating user account' });
     }
 };
+
+// Signin Route
+exports.signin = async (req, res) => {
+    const { email, password } = req.body;
+
+    try {
+        // Find user by email
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(400).json({ message: 'User not found' });
+        }
+
+        // Verify password
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+        if (!isPasswordValid) {
+            return res.status(400).json({ message: 'Invalid credentials' });
+        }
+
+        // Create JWT token
+        const options={
+            expires:new Date(Date.now()+3*24*60*60*1000),
+            httpOnly:true
+        }
+        const accessToken = jwt.sign({ email, role: user.role , _id:user._id}, process.env.ACCESS_TOKEN_SECRET);
+        res.cookie('token',accessToken,options).status(200).json({ accessToken,userId:user._id, message: 'Login successful',redirectUrl:'/',success:true });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Signin Failure, try again' });
+    }
+};
+
 
 exports.changePassword = async (req, res) => {
     try {
@@ -212,7 +159,7 @@ exports.changePassword = async (req, res) => {
         await user.setPassword(newPassword);
         await user.save();
         try {
-            const emailResponse = await mailSender(user.email, 'Password Changed',`PASSWORD CHANGE CONFIRMATION`
+            const emailResponse = await mailSender(user.email, 'Password Changed', `PASSWORD CHANGE CONFIRMATION`
             );
             console.log(emailResponse);
 
@@ -247,6 +194,104 @@ exports.signout = async (req, res, next) => {
     })
 
 }
+const Token = require('../models/Token')
+
+exports.resetPasswordRequest = async (req, res) => {
+    try {
+        const { email } = req.body;
+        console.log(email);
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+        const token = Math.random().toString(36).substring(2);
+        console.log(token);
+        const tokenRecord = new Token({
+            user: user._id,
+            token
+        })
+        await tokenRecord.save();
+
+        const resetLink = `http://localhost:3000/reset-password?token=${token}&email=${encodeURIComponent('sarjeetsingh4680@gmail.com')}`
+        const emailBody = `Click the following link to reset your password: ${resetLink}`
+        await mailSender(email, 'Password Reset', emailBody);
+        return res.status(200).json({
+            success: true,
+            message: 'Password reset link sent successfully',
+            resetLink: resetLink
+        })
+    }
+    catch (err) {
+        console.log('Error requesting password reset:', err);
+        res.status(500).json({ success: false, message: 'Internal server error.' });
+    }
+}
+
+exports.resetPassword = async (req, res) => {
+    try {
+        const { token, newPassword, confirmNewPassword } = req.body;
+        console.log(req.body);
+
+        if (newPassword !== confirmNewPassword) {
+            return res.status(400).json({
+                success: false,
+                message: 'Password fields do not match'
+            });
+        }
+
+        const tokenRecord = await Token.findOne({ token });
+
+        if (!tokenRecord) {
+            return res.status(404).json({
+                success: false,
+                message: 'Invalid or expired token'
+            });
+        }
+
+        const user = await User.findById(tokenRecord.user);
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        // Use setPassword method provided by passport-local-mongoose to properly hash and set the new password
+        user.setPassword(newPassword, async () => {
+            await user.save();
+            await Token.findByIdAndDelete(tokenRecord._id);
+            try {
+                const emailResponse = await mailSender(user.email, 'Password Reset Confirmation', 'Your password has been successfully reset. If you did not request this change, please contact us immediately.');
+                console.log(emailResponse);
+
+            } catch (error) {
+                console.log("Error occured while sending email :", error)
+                return res.status(500).json({
+                    success: false,
+                    message: 'Error occured while sending email',
+                    error: error.message
+                });
+            }
+
+            return res.status(200).json({
+                success: true,
+                message: 'Password reset successfully'
+            });
+        });
+
+    } catch (err) {
+        console.error('Error resetting password:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+}
+
 
 
 
